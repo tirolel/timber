@@ -3,6 +3,7 @@ package timber.log;
 import android.util.Log;
 
 import java.net.UnknownHostException;
+import java.net.ConnectException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -37,7 +38,7 @@ public class TimberTest {
     Timber.d("Test");
 
     assertLog()
-        .hasDebugMessage("TimberTest:37", "Test")
+        .hasDebugMessage("TimberTest:38", "Test")
         .hasNoMoreMessages();
   }
 
@@ -45,6 +46,12 @@ public class TimberTest {
     Timber.Tree timber = Timber.asTree();
     try {
       Timber.plant(timber);
+      fail();
+    } catch (IllegalArgumentException e) {
+      assertThat(e).hasMessage("Cannot plant Timber into itself.");
+    }
+    try {
+      Timber.plant(new Timber.Tree[] { timber });
       fail();
     } catch (IllegalArgumentException e) {
       assertThat(e).hasMessage("Cannot plant Timber into itself.");
@@ -62,12 +69,32 @@ public class TimberTest {
     assertThat(Timber.treeCount()).isEqualTo(0);
   }
 
+  @SuppressWarnings("ConstantConditions")
   @Test public void nullTree() {
+    Timber.Tree nullTree = null;
     try {
-      Timber.plant(null);
+      Timber.plant(nullTree);
       fail();
     } catch (NullPointerException e) {
       assertThat(e).hasMessage("tree == null");
+    }
+  }
+
+  @SuppressWarnings("ConstantConditions")
+  @Test public void nullTreeArray() {
+    Timber.Tree[] nullTrees = null;
+    try {
+      Timber.plant(nullTrees);
+      fail();
+    } catch (NullPointerException e) {
+      assertThat(e).hasMessage("trees == null");
+    }
+    nullTrees = new Timber.Tree[] { null };
+    try {
+      Timber.plant(nullTrees);
+      fail();
+    } catch (NullPointerException e) {
+      assertThat(e).hasMessage("trees contains null");
     }
   }
 
@@ -76,6 +103,14 @@ public class TimberTest {
     Timber.DebugTree tree2 = new Timber.DebugTree();
     Timber.plant(tree1);
     Timber.plant(tree2);
+
+    assertThat(Timber.forest()).containsExactly(tree1, tree2);
+  }
+
+  @Test public void forestReturnsAllTreesPlanted() {
+    Timber.DebugTree tree1 = new Timber.DebugTree();
+    Timber.DebugTree tree2 = new Timber.DebugTree();
+    Timber.plant(tree1, tree2);
 
     assertThat(Timber.forest()).containsExactly(tree1, tree2);
   }
@@ -172,7 +207,51 @@ public class TimberTest {
     NullPointerException datThrowable = new NullPointerException();
     Timber.e(datThrowable, "OMFG!");
 
-    assertExceptionLogged("OMFG!", "java.lang.NullPointerException");
+    assertExceptionLogged(Log.ERROR, "OMFG!", "java.lang.NullPointerException");
+  }
+
+  @Test public void exceptionOnly() {
+    Timber.plant(new Timber.DebugTree());
+
+    Timber.v(new IllegalArgumentException());
+    assertExceptionLogged(Log.VERBOSE, null, "java.lang.IllegalArgumentException", "TimberTest", 0);
+
+    Timber.i(new NullPointerException());
+    assertExceptionLogged(Log.INFO, null, "java.lang.NullPointerException", "TimberTest", 1);
+
+    Timber.d(new UnsupportedOperationException());
+    assertExceptionLogged(Log.DEBUG, null, "java.lang.UnsupportedOperationException", "TimberTest", 2);
+
+    Timber.w(new UnknownHostException());
+    assertExceptionLogged(Log.WARN, null, "java.net.UnknownHostException", "TimberTest", 3);
+
+    Timber.e(new ConnectException());
+    assertExceptionLogged(Log.ERROR, null, "java.net.ConnectException", "TimberTest", 4);
+
+    Timber.wtf(new AssertionError());
+    assertExceptionLogged(Log.ASSERT, null, "java.lang.AssertionError", "TimberTest", 5);
+  }
+
+  @Test public void exceptionOnlyCustomTag() {
+    Timber.plant(new Timber.DebugTree());
+
+    Timber.tag("Custom").v(new IllegalArgumentException());
+    assertExceptionLogged(Log.VERBOSE, null, "java.lang.IllegalArgumentException", "Custom", 0);
+
+    Timber.tag("Custom").i(new NullPointerException());
+    assertExceptionLogged(Log.INFO, null, "java.lang.NullPointerException", "Custom", 1);
+
+    Timber.tag("Custom").d(new UnsupportedOperationException());
+    assertExceptionLogged(Log.DEBUG, null, "java.lang.UnsupportedOperationException", "Custom", 2);
+
+    Timber.tag("Custom").w(new UnknownHostException());
+    assertExceptionLogged(Log.WARN, null, "java.net.UnknownHostException", "Custom", 3);
+
+    Timber.tag("Custom").e(new ConnectException());
+    assertExceptionLogged(Log.ERROR, null, "java.net.ConnectException", "Custom", 4);
+
+    Timber.tag("Custom").wtf(new AssertionError());
+    assertExceptionLogged(Log.ASSERT, null, "java.lang.AssertionError", "Custom", 5);
   }
 
   @Test public void exceptionFromSpawnedThread() throws InterruptedException {
@@ -184,9 +263,9 @@ public class TimberTest {
         Timber.e(datThrowable, "OMFG!");
         latch.countDown();
       }
-    }.run();
+    }.start();
     latch.await();
-    assertExceptionLogged("OMFG!", "java.lang.NullPointerException");
+    assertExceptionLogged(Log.ERROR, "OMFG!", "java.lang.NullPointerException");
   }
 
   @Test public void nullMessageWithThrowable() {
@@ -194,7 +273,7 @@ public class TimberTest {
     final NullPointerException datThrowable = new NullPointerException();
     Timber.e(datThrowable, null);
 
-    assertExceptionLogged("", "java.lang.NullPointerException");
+    assertExceptionLogged(Log.ERROR, "", "java.lang.NullPointerException");
   }
 
   @Test public void chunkAcrossNewlinesAndLimit() {
@@ -310,11 +389,57 @@ public class TimberTest {
         .hasNoMoreMessages();
   }
 
+  @Test public void isLoggableTagControlsLogging() {
+    Timber.plant(new Timber.DebugTree() {
+      @Override protected boolean isLoggable(String tag, int priority) {
+        return "FILTER".equals(tag);
+      }
+    });
+    Timber.tag("FILTER").v("Hello, World!");
+    Timber.d("Hello, World!");
+    Timber.i("Hello, World!");
+    Timber.w("Hello, World!");
+    Timber.e("Hello, World!");
+    Timber.wtf("Hello, World!");
+
+    assertLog()
+        .hasVerboseMessage("FILTER", "Hello, World!")
+        .hasNoMoreMessages();
+  }
+
   @Test public void logsUnknownHostExceptions() {
     Timber.plant(new Timber.DebugTree());
     Timber.e(new UnknownHostException(), null);
 
-    assertExceptionLogged("", "UnknownHostException");
+    assertExceptionLogged(Log.ERROR, "", "UnknownHostException");
+  }
+
+  @Test public void tagIsClearedWhenNotLoggable() {
+    Timber.plant(new Timber.DebugTree() {
+      @Override
+      protected boolean isLoggable(int priority) {
+        return priority >= Log.WARN;
+      }
+    });
+    Timber.tag("NotLogged").i("Message not logged");
+    Timber.w("Message logged");
+
+    assertLog()
+        .hasWarnMessage("TimberTest", "Message logged")
+        .hasNoMoreMessages();
+  }
+
+  @Test public void logsWithCustomFormatter() {
+    Timber.plant(new Timber.DebugTree() {
+      @Override
+      protected String formatMessage(String message, Object[] args) {
+        return String.format("Test formatting: "+message, args);
+      }
+    });
+    Timber.d("Test message logged. %d", 100);
+
+    assertLog()
+        .hasDebugMessage("TimberTest", "Test formatting: Test message logged. 100");
   }
 
   private static String repeat(char c, int number) {
@@ -323,13 +448,21 @@ public class TimberTest {
     return new String(data);
   }
 
-  private static void assertExceptionLogged(String message, String exceptionClassname) {
+  private static void assertExceptionLogged(int logType, String message, String exceptionClassname) {
+    assertExceptionLogged(logType, message, exceptionClassname, null, 0);
+  }
+
+  private static void assertExceptionLogged(int logType, String message, String exceptionClassname, String tag, int index) {
     List<LogItem> logs = ShadowLog.getLogs();
-    assertThat(logs).hasSize(1);
-    LogItem log = logs.get(0);
-    assertThat(log.type).isEqualTo(Log.ERROR);
-    assertThat(log.tag).isEqualTo("TimberTest");
-    assertThat(log.msg).startsWith(message);
+    assertThat(logs).hasSize(index + 1);
+    LogItem log = logs.get(index);
+    assertThat(log.type).isEqualTo(logType);
+    assertThat(log.tag).isEqualTo(tag != null ? tag : "TimberTest");
+
+    if (message != null) {
+      assertThat(log.msg).startsWith(message);
+    }
+
     assertThat(log.msg).contains(exceptionClassname);
     // We use a low-level primitive that Robolectric doesn't populate.
     assertThat(log.throwable).isNull();

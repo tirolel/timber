@@ -1,6 +1,27 @@
 Change Log
 ==========
 
+Version 4.3.1 *(2016-09-19)*
+----------------------------
+
+ * New: Add convenience method `isLoggable` convenience method which also provides the tag.
+
+
+Version 4.3.0 *(2016-08-18)*
+----------------------------
+
+ * New: Overloads for all log methods which accept only a `Throwable` without a message.
+
+
+Version 4.2.0 *(2016-08-12)*
+----------------------------
+
+ * New: `Timber.plant` now has a varargs overload for planting multiple trees at once.
+ * New: minSdkVersion is now 9 because reasons.
+ * Fix: Consume explicitly specified tag even if the message is determined as not loggable (due to level).
+ * Fix: Allow lint checks to run when `Timber.tag(..).v(..)`-style logging is used.
+
+
 Version 4.1.2 *(2016-03-30)*
 ----------------------------
 
